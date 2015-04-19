@@ -30,6 +30,7 @@ on init
     mkdir /system
     mkdir /data
     mkdir /cache
+    mkdir /sideload
     mount tmpfs tmpfs /tmp
 
     chown root shell /tmp
@@ -69,9 +70,7 @@ on fs
     write /sys/class/android_usb/android0/iProduct ${ro.product.model}
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
 
-
 on boot
-
     ifup lo
     hostname localhost
     domainname localdomain
@@ -79,13 +78,13 @@ on boot
     class_start default
 
 on property:sys.powerctl=*
-    powerctl ${sys.powerctl}
+   powerctl ${sys.powerctl}
 
 service ueventd /sbin/ueventd
     critical
     seclabel u:r:ueventd:s0
 
-service healthd /sbin/healthd -n
+service healthd /sbin/healthd -r
     critical
     seclabel u:r:healthd:s0
 
@@ -94,6 +93,8 @@ service recovery /sbin/recovery
 
 service setup_adbd /sbin/setup_adbd
     oneshot
+    seclabel u:r:recovery:s0
+    disabled
 
 service adbd /sbin/adbd --root_seclabel=u:r:su:s0 --device_banner=recovery
     disabled
@@ -106,6 +107,9 @@ service vold /sbin/minivold
     seclabel u:r:recovery:s0
 
 # setup_adbd will start adb once it has checked the keys
+on property:ro.debuggable=1
+    start setup_adbd
+
 on property:service.adb.root=1
     write /sys/class/android_usb/android0/enable 0
     restart adbd

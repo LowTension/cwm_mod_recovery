@@ -31,11 +31,12 @@ int install_zip(const char* packagefilepath);
 
 void show_power_menu();
 int show_nandroid_advanced_menu();
-int show_nvram_menu();
 void free_string_array(char** array);
+void wipe_preflash(int confirm);
 void wipe_data(int confirm);
 void wipe_cache(int confirm);
 void wipe_dalvik_cache(int confirm);
+void wipe_battery_stats(int confirm);
 void show_wipe_menu();
 void show_carliv_menu();
 void show_rainbow_menu();

@@ -63,16 +63,16 @@ static unsigned int nandroid_files_total = 0;
 static unsigned int nandroid_files_count = 0;
 
 static void nandroid_generate_timestamp_path(char* backup_path) {
-    time_t t = time(NULL);
+	time_t t = time(NULL);
     struct tm *tmp = localtime(&t);
     if (tmp == NULL) {
         struct timeval tp;
         gettimeofday(&tp, NULL);
-        snprintf(backup_path, PATH_MAX, "%s/clockworkmod/backup/%ld", get_primary_storage_path(), tp.tv_sec);
+        snprintf(backup_path, PATH_MAX, "%s/clockworkmod/backup/CTR_%ld", get_primary_storage_path(), tp.tv_sec);
     } else {
         char str[PATH_MAX];
-        strftime(str, PATH_MAX, "clockworkmod/backup/%F.%H.%M.%S", tmp);
-        snprintf(backup_path, PATH_MAX, "%s/%s", get_primary_storage_path(), str);
+        strftime(str, PATH_MAX, "%F.%H.%M.%S", tmp);
+        snprintf(backup_path, PATH_MAX, "%s/clockworkmod/backup/CTR_%s", get_primary_storage_path(), str);
     }
 }
 
@@ -412,6 +412,7 @@ int nandroid_backup(const char* backup_path) {
     if (ensure_path_mounted(backup_path) != 0) {
         return print_and_error("Can't mount backup path.\n", NANDROID_ERROR_GENERAL);
     }
+    ui_print("-- Start the backup to %s.\n", backup_path);
 
     Volume* volume;
     if (is_data_media_volume_path(backup_path))
@@ -458,6 +459,11 @@ int nandroid_backup(const char* backup_path) {
 
     if (0 != (ret = nandroid_backup_partition(backup_path, "/system")))
         return print_and_error(NULL, ret);
+
+	if (volume_for_path("/custpack") != NULL) {
+	    if (0 != (ret = nandroid_backup_partition(backup_path, "/custpack")))
+	        return print_and_error(NULL, ret);
+	}
 
     if (0 != (ret = nandroid_backup_partition(backup_path, "/data")))
         return print_and_error(NULL, ret);
@@ -528,6 +534,8 @@ int nandroid_advanced_backup(const char* backup_path, unsigned char flags) {
     int backup_cache = ((flags & NANDROID_CACHE) == NANDROID_CACHE);
     int backup_sdext = ((flags & NANDROID_SDEXT) == NANDROID_SDEXT);
     int backup_wimax = ((flags & NANDROID_WIMAX) == NANDROID_WIMAX);
+    
+    ui_print("-- Start the advanced backup to %s.\n", backup_path);
 
     Volume* volume;
     if (is_data_media_volume_path(backup_path))
@@ -571,6 +579,11 @@ int nandroid_advanced_backup(const char* backup_path, unsigned char flags) {
 
     if (backup_system && 0 != (ret = nandroid_backup_partition(backup_path, "/system")))
         return print_and_error(NULL, ret);
+        
+	if (volume_for_path("/custpack") != NULL) {
+	    if (backup_system && 0 != (ret = nandroid_backup_partition(backup_path, "/custpack")))
+	        return print_and_error(NULL, ret);
+	}
 
     if (backup_data && 0 != (ret = nandroid_backup_partition(backup_path, "/data")))
         return print_and_error(NULL, ret);
@@ -599,49 +612,6 @@ int nandroid_advanced_backup(const char* backup_path, unsigned char flags) {
     ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_reset_progress();
     ui_print("\nBackup complete!\n");
-    return 0;
-}
-
-//=========================================/
-//=      Nvram backup, original work      =/
-//=             of carliv@xda             =/
-//=========================================/
-
-int nvram_backup(const char* backup_path)
-{
-
-	if (ensure_path_mounted(backup_path) != 0) {
-        return print_and_error("Can't mount backup path.\n", NANDROID_ERROR_GENERAL);
-    }
-    
-    char tmp[PATH_MAX];
-    int ret;
-	struct stat sn;
-	sprintf(tmp, "%s/nvram.img", backup_path);
-	
-	if (stat(tmp, &sn) == 0)
-    {
-	    ui_print("Nvram image already present, skipping...\n");
-	    return 0;          
-    } 
-    else
-    {
-		ensure_directory(backup_path);
-		ui_set_background(BACKGROUND_ICON_INSTALLING);
-	
-	    Volume* vol = volume_for_path("/nvram");
-	    if (vol == NULL) {
-	        return print_and_error("Unable to find volume for backup path.\n", NANDROID_ERROR_GENERAL); 
-	    } else {	
-		    if (0 != (ret = nandroid_backup_partition(backup_path, "/nvram")))
-			        return ret;
-	    }
-    }			        
-
-    sync();
-    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
-    ui_reset_progress();
-    ui_print("\nBackup nvram complete!\n");
     return 0;
 }
 
@@ -676,6 +646,10 @@ static int nandroid_dump(const char* partition) {
 
     if (strcmp(partition, "system") == 0) {
         return nandroid_backup_partition("-", "/system");
+    }
+
+    if (strcmp(partition, "custpack") == 0) {
+        return nandroid_backup_partition("-", "/custpack");
     }
 
     return 1;
@@ -849,7 +823,7 @@ static int nandroid_restore_partition_extended(const char* backup_path, const ch
         }
 
         if (backup_filesystem == NULL || restore_handler == NULL) {
-            ui_print("%s.img not found. Skipping restore of %s.\n", name, mount_point);
+            ui_print("%s backup file not found. Skipping restore of %s.\n", name, mount_point);
             return 0;
         } else {
             printf("Found new backup image: %s\n", tmp);
@@ -1006,6 +980,11 @@ int nandroid_restore(const char* backup_path, unsigned char flags) {
 
     if (restore_system && 0 != (ret = nandroid_restore_partition(backup_path, "/system")))
         return print_and_error(NULL, ret);
+        
+	if (volume_for_path("/custpack") != NULL) {
+	    if (restore_system && 0 != (ret = nandroid_restore_partition(backup_path, "/custpack")))
+	        return print_and_error(NULL, ret);
+	}
 
     if (restore_data && 0 != (ret = nandroid_restore_partition(backup_path, "/data")))
         return print_and_error(NULL, ret);
@@ -1028,43 +1007,6 @@ int nandroid_restore(const char* backup_path, unsigned char flags) {
     ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_reset_progress();
     ui_print("\nRestore complete!\n");
-    return 0;
-}
-
-//=========================================/
-//=      Nvram restore, original work     =/
-//=             of carliv@xda             =/
-//=========================================/
-
-int nvram_restore(const char* backup_path,  unsigned char flags)
-{
-    ui_set_background(BACKGROUND_ICON_INSTALLING);
-    ui_show_indeterminate_progress();
-    nandroid_files_total = 0;
-    int ret;
-    
-    int restore_nvram = ((flags & NANDROID_NVRAM) == NANDROID_NVRAM);
-
-    if (ensure_path_mounted(backup_path) != 0)
-        return print_and_error("Can't mount backup path\n", NANDROID_ERROR_GENERAL);
-
-    char tmp[PATH_MAX];
-	struct stat s;
-	sprintf(tmp, "%s/nvram.img", backup_path);
-	
-	if (restore_nvram && (stat(tmp, &s) == 0))
-    {
-	    if (NULL != volume_for_path("/nvram") && 0 != (ret = nandroid_restore_partition(backup_path, "/nvram")))
-            return print_and_error(NULL, ret);           
-    } 
-    else {
-		ui_print("No nvram image present, skipping...\n");
-	}           
-
-    sync();
-    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
-    ui_reset_progress();
-    ui_print("\nRestore nvram complete!\n");
     return 0;
 }
 
@@ -1091,6 +1033,11 @@ static int nandroid_undump(const char* partition) {
 
     if (strcmp(partition, "system") == 0) {
         if (0 != (ret = nandroid_restore_partition("-", "/system")))
+            return ret;
+    }
+
+    if (strcmp(partition, "custpack") == 0) {
+        if (0 != (ret = nandroid_restore_partition("-", "/custpack")))
             return ret;
     }
 

@@ -60,3 +60,11 @@ int device_wipe_cache() {
 int device_wipe_dalvik_cache() {
     return 0;
 }
+
+int device_wipe_battery_stats() {
+    return 0;
+}
+
+int device_wipe_system() {
+    return 0;
+}

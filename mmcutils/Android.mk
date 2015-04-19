@@ -3,7 +3,7 @@ ifneq ($(TARGET_SIMULATOR),true)
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-BOARD_RECOVERY_DEFINES := BOARD_HAS_MTK
+BOARD_RECOVERY_DEFINES := BOARD_HAS_MTK BOARD_NEEDS_MTK_GETSIZE
 
 $(foreach board_define,$(BOARD_RECOVERY_DEFINES), \
   $(if $($(board_define)), \

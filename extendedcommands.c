@@ -80,8 +80,8 @@
 #endif
 
 extern struct selabel_handle *sehandle;
-int signature_check_enabled = 1;
-int md5_check_enabled = 1;
+int signature_check_enabled = 0;
+int md5_check_enabled = 0;
 
 typedef struct {
     char mount[255];
@@ -221,10 +221,7 @@ void toggle_loki_support() {
 #define POWER_ITEM_POWEROFF	    2
 
 void show_power_menu() {
-	const char* headers[] = { "Power Options",
-                                "",
-                                NULL
-    };
+	const char* headers[] = { "Power Options", "", NULL };
     
     char* power_items[4];
 	power_items[0] = "Reboot Recovery";
@@ -255,14 +252,16 @@ void show_power_menu() {
 			  ui_print("Rebooting to download mode...\n");
 #ifdef BOARD_HAS_MTK
               reboot_main_system(ANDROID_RB_POWEROFF, 0, 0);
+              break;
 #else                    
 			  reboot_main_system(ANDROID_RB_RESTART2, 0, "download");
+			  break;
 #endif
 			} else {
 			  ui_print("Rebooting to bootloader...\n");
 			  reboot_main_system(ANDROID_RB_RESTART2, 0, "bootloader");
+			  break;
 			}
-			break;
 		  }
 		  case POWER_ITEM_POWEROFF:
 		  {
@@ -369,24 +368,36 @@ out:
 //=             of carliv@xda             =/
 //=========================================/
 
+void wipe_battery_stats(int confirm)
+{
+	if (confirm && !confirm_selection( "Confirm reset battery stats?", "Yes - Reset battery stats"))
+        return;
+        
+    ensure_path_mounted("/data");
+    device_wipe_battery_stats();
+    ui_print("\n-- Resetting battery stats...\n");
+    __system("rm -f /data/system/batterystats.bin");
+	ui_print("Battery stats resetted.\n");
+    ensure_path_unmounted("/data");
+}
+
 #define WIPE_ALL_DATA	    0
 #define WIPE_CACHE          1
 #define WIPE_DALVIK_CACHE	2
+#define WIPE_BATT_STATS 	3
+#define WIPE_PREFLASH   	4
 
 void show_wipe_menu()
 {
 
-    const char* headers[] = {  "Wipe Menu",
-								 "",
-								 NULL
-    };
+    const char* headers[] = { "Wipe Menu", "", NULL };
     
-    char* wipe_items[] = { "Wipe Data - Factory Reset",
-						"Wipe Cache",
-						"Wipe Dalvik Cache",
-						NULL,	 	 
-						NULL
-    };
+	char* wipe_items[] = { "Wipe Data - Factory Reset",
+						   "Wipe Cache",
+						   "Wipe Dalvik Cache",
+						   "Reset Battery Stats",
+						   "Wipe ALL - Preflash",
+						   NULL };
 
 	for (;;) {
 		int chosen_item = get_menu_selection(headers, wipe_items, 0, 0);
@@ -403,6 +414,14 @@ void show_wipe_menu()
 			break;
 		  case WIPE_DALVIK_CACHE:
 			wipe_dalvik_cache(ui_text_visible());
+			if (!ui_text_visible()) return;
+			break;
+		  case WIPE_BATT_STATS:
+			wipe_battery_stats(ui_text_visible());
+			if (!ui_text_visible()) return;
+			break;
+		  case WIPE_PREFLASH:
+			wipe_preflash(ui_text_visible());
 			if (!ui_text_visible()) return;
 			break;
 		}
@@ -632,33 +651,6 @@ static void show_nandroid_restore_menu(const char* path) {
     free(file);
 }
 
-//=========================================/
-//=      Nvram restore, original work     =/
-//=             of carliv@xda             =/
-//=========================================/
-
-static void show_nvram_restore_menu(const char* path) {
-    if (ensure_path_mounted(path) != 0) {
-        LOGE("Can't mount %s\n", path);
-        return;
-    }
-
-    static const char* headers[] = {  "Choose nvram to restore", "", NULL };
-
-    char tmp[PATH_MAX];
-    sprintf(tmp, "%s/clockworkmod/backup/.nvram/", path);
-    char* file = choose_file_menu(tmp, NULL, headers);
-    if (file == NULL)
-        return;
-
-    if (confirm_selection("Confirm restore?", "Yes - Restore")) {
-		unsigned char flags = NANDROID_NVRAM;
-        nvram_restore(file, flags);
-    }
-    
-    free(file);
-}
-
 static void show_nandroid_delete_menu(const char* path) {
     if (ensure_path_mounted(path) != 0) {
         LOGE("Can't mount %s\n", path);
@@ -676,6 +668,7 @@ static void show_nandroid_delete_menu(const char* path) {
     if (confirm_selection("Confirm delete?", "Yes - Delete")) {
         sprintf(tmp, "rm -rf %s", file);
         __system(tmp);
+        ui_print("-- %s backup deleted successfully!\n", basename(file));
     }
 
     free(file);
@@ -960,7 +953,7 @@ static MFMatrix get_mnt_fmt_capabilities(char *fs_type, char *mount_point) {
     fs_matrix[4] = (MFMatrix){ "ramdisk",   0,  0 };
     fs_matrix[5] = (MFMatrix){ "swap",      0,  0 };
 
-    const int NUM_MNT_PNTS = 9;
+    const int NUM_MNT_PNTS = 10;
     MFMatrix *mp_matrix = malloc(NUM_MNT_PNTS * sizeof(MFMatrix));
     // Defined capabilities:   mount_point   mnt fmt
     mp_matrix[0] = (MFMatrix){ "/misc",       0,  0 };
@@ -970,8 +963,9 @@ static MFMatrix get_mnt_fmt_capabilities(char *fs_type, char *mount_point) {
     mp_matrix[4] = (MFMatrix){ "/nvram",      0,  0 };
     mp_matrix[5] = (MFMatrix){ "/recovery",   0,  0 };
     mp_matrix[6] = (MFMatrix){ "/uboot",      0,  0 };
-    mp_matrix[7] = (MFMatrix){ "/efs",        0,  0 };
-    mp_matrix[8] = (MFMatrix){ "/wimax",      0,  0 };
+    mp_matrix[7] = (MFMatrix){ "/logo",       0,  0 };
+    mp_matrix[8] = (MFMatrix){ "/efs",        0,  0 };
+    mp_matrix[9] = (MFMatrix){ "/wimax",      0,  0 };
 
     int i;
     for (i = 0; i < NUM_FS_TYPES; i++) {
@@ -1113,12 +1107,12 @@ int show_partition_menu() {
         menu_entries = mountable_volumes + formatable_volumes;
         me = (struct menu_extras){ 0, 0, 0, 0 };
 
-        if (me.dm = is_data_media()) {
+        if ((me.dm = is_data_media())) {
             me.idm = menu_entries;
-            list[me.idm] = "Format /data and /data/media (/sdcard)";
+            list[me.idm] = "Format /data and /data/media";
             menu_entries++;
         }
-        if (me.ums = is_ums_capable()) {
+        if ((me.ums = is_ums_capable())) {
             me.iums = menu_entries;
             list[me.iums] = "Mount USB storage";
             menu_entries++;
@@ -1163,7 +1157,7 @@ int show_partition_menu() {
             else
                 ui_print("Done.\n");
         } else if (me.dm && chosen_item == me.idm) {
-            if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
+            if (!confirm_selection("format /data and /data/media", confirm))
                 continue;
             preserve_data_media(0);
             ui_print("[*] Formatting /data...\n");
@@ -1242,16 +1236,20 @@ static void show_nandroid_advanced_backup_menu(const char* path) {
         return;
     }
 
-    static const char* headers[] = { "Advanced Backup",
-                                     "",
-                                     "Select partition(s) to backup:",
-                                     NULL };
+    static const char* headers[] = { "Advanced Backup", "", "Select partition(s) to backup:", NULL };
 
 	char backup_path[PATH_MAX];
 	time_t t = time(NULL);
-	struct timeval tp;
-	gettimeofday(&tp, NULL);
-	sprintf(backup_path, "%s/clockworkmod/backup/advanced-%ld", path, tp.tv_sec);
+    struct tm *tmp = localtime(&t);
+    if (tmp == NULL) {
+        struct timeval tp;
+        gettimeofday(&tp, NULL);
+        sprintf(backup_path, "%s/clockworkmod/backup/adv_%ld", path, tp.tv_sec);
+    } else {
+        char str[PATH_MAX];
+        strftime(str, sizeof(str), "%F-%H-%M-%S", tmp);
+        sprintf(backup_path, "%s/clockworkmod/backup/adv_%s", path, str);
+    }
 	
     int disable_wimax = 0;
     if (0 != get_partition_device("wimax", backup_path))
@@ -1261,7 +1259,11 @@ static void show_nandroid_advanced_backup_menu(const char* path) {
     // Dynamically allocated entries will have (+) added/removed to end
     // Leave space at end of string  so terminator doesn't need to move
     list[0] = malloc(sizeof("Backup boot    "));
-    list[1] = malloc(sizeof("Backup system    "));
+    if (volume_for_path("/custpack") != NULL) {
+        list[1] = malloc(sizeof("Backup system & custpack    "));
+    } else {
+		list[1] = malloc(sizeof("Backup system    "));
+	}    
     list[2] = malloc(sizeof("Backup data    "));
     list[3] = malloc(sizeof("Backup cache    "));
     list[4] = malloc(sizeof("Backup sd-ext    "));
@@ -1271,7 +1273,11 @@ static void show_nandroid_advanced_backup_menu(const char* path) {
     list[7 - disable_wimax] = NULL;
 
     sprintf(list[0], "Backup boot    ");
-    sprintf(list[1], "Backup system    ");
+    if (volume_for_path("/custpack") != NULL) {
+        sprintf(list[1], "Backup system & custpack    ");
+    } else {
+		sprintf(list[1], "Backup system    ");
+	}    
     sprintf(list[2], "Backup data    ");
     sprintf(list[3], "Backup cache    ");
     sprintf(list[4], "Backup sd-ext    ");
@@ -1326,10 +1332,7 @@ static void show_nandroid_advanced_restore_menu(const char* path) {
     if (file == NULL)
         return;
 
-    static const char* headers[] = { "Advanced Restore",
-                                     "",
-                                     "Select image(s) to restore:",
-                                     NULL };
+    static const char* headers[] = { "Advanced Restore", "", "Select image(s) to restore:", NULL };
 
     int disable_wimax = 0;
     if (0 != get_partition_device("wimax", tmp))
@@ -1339,7 +1342,11 @@ static void show_nandroid_advanced_restore_menu(const char* path) {
     // Dynamically allocated entries will have (+) added/removed to end
     // Leave space at end of string  so terminator doesn't need to move
     list[0] = malloc(sizeof("Restore boot    "));
-    list[1] = malloc(sizeof("Restore system    "));
+    if (volume_for_path("/custpack") != NULL) {
+        list[1] = malloc(sizeof("Restore system & custpack    "));
+    } else {
+		list[1] = malloc(sizeof("Restore system    "));
+	}    
     list[2] = malloc(sizeof("Restore data    "));
     list[3] = malloc(sizeof("Restore cache    "));
     list[4] = malloc(sizeof("Restore sd-ext    "));
@@ -1349,7 +1356,11 @@ static void show_nandroid_advanced_restore_menu(const char* path) {
     list[7 - disable_wimax] = NULL;
 
     sprintf(list[0], "Restore boot    ");
-    sprintf(list[1], "Restore system    ");
+    if (volume_for_path("/custpack") != NULL) {
+        sprintf(list[1], "Restore system & custpack    ");
+    } else {
+		sprintf(list[1], "Restore system    ");
+	}    
     sprintf(list[2], "Restore data    ");
     sprintf(list[3], "Restore cache    ");
     sprintf(list[4], "Restore sd-ext    ");
@@ -1606,19 +1617,19 @@ int show_nandroid_menu() {
             int chosen_subitem = chosen_item % NANDROID_ACTIONS_NUM;
             switch (chosen_subitem) {
                 case 0: {
-                    char backup_path[PATH_MAX];
+					char backup_path[PATH_MAX];
                     time_t t = time(NULL);
                     struct tm *tmp = localtime(&t);
                     if (tmp == NULL) {
                         struct timeval tp;
                         gettimeofday(&tp, NULL);
-                        sprintf(backup_path, "%s/clockworkmod/backup/%ld", chosen_path, tp.tv_sec);
+                        sprintf(backup_path, "%s/clockworkmod/backup/CTR_%ld", chosen_path, tp.tv_sec);
                     } else {
                         char path_fmt[PATH_MAX];
-                        strftime(path_fmt, sizeof(path_fmt), "clockworkmod/backup/%F.%H.%M.%S", tmp);
+                        strftime(path_fmt, sizeof(path_fmt), "%F-%H-%M-%S", tmp);
                         // this sprintf results in:
                         // clockworkmod/backup/%F.%H.%M.%S (time values are populated too)
-                        sprintf(backup_path, "%s/%s", chosen_path, path_fmt);
+                        sprintf(backup_path, "%s/clockworkmod/backup/CTR_%s", chosen_path, path_fmt);
                     }
                     nandroid_backup(backup_path);
                     break;
@@ -1829,15 +1840,9 @@ static int can_partition(const char* volume) {
 
 void show_rainbow_menu()
 {
-    const char* headers[] = {  "Rainbow Mode",
-                                "",
-                                NULL
-    };
+    const char* headers[] = {  "Rainbow Mode", "", NULL };
 
-    char* toggle_rainbow[] = { "Rainbow Enabled",
-						"Rainbow Disabled",
-						NULL
-    };
+    char* toggle_rainbow[] = { "Rainbow Enabled", "Rainbow Disabled", NULL };
 
     for (;;)
     {
@@ -1848,94 +1853,14 @@ void show_rainbow_menu()
         	{
 			case 0:
                 ui_set_rainbow_mode(1);
-                ui_print("Rainbow mode enabled!\n");
+                ui_print("\nRainbow mode enabled!\n");
                 break;  
              case 1:
                 ui_set_rainbow_mode(0);
-                ui_print("Rainbow mode disabled\n");
+                ui_print("\nRainbow mode disabled\n");
                 break;
         }
     }
-}
-
-//=========================================/
-//=        Nvram menu, original work      =/
-//=             of carliv@xda             =/
-//=========================================/
-
-static void add_nvram_options_for_volume(char** menu, char* path, int offset) {
-    char buf[100];
-
-    sprintf(buf, "Backup Nvram to %s", path);
-    menu[offset] = strdup(buf);
-
-    sprintf(buf, "Restore Nvram from %s", path);
-    menu[offset + 1] = strdup(buf);
-}
-
-int show_nvram_menu() {    
-    char* primary_path = get_primary_storage_path();
-    char** extra_paths = get_extra_storage_paths();
-    int num_extra_volumes = get_num_extra_volumes();
-    int i = 0, offset = 0, chosen_item = 0;
-    char* chosen_path = NULL;
-    int action_entries_num = (num_extra_volumes + 1) * 2;
-
-    static const char* headers[] = {  "Nvram Backup & Restore", "", NULL };
-
-    static char* list[((MAX_NUM_MANAGED_VOLUMES + 1) * 2) + 1];
-
-    // actions for primary_path
-    add_nvram_options_for_volume(list, primary_path, offset);
-    offset += 2;
-
-    // actions for voldmanaged volumes
-    if (extra_paths != NULL) {
-        for (i = 0; i < num_extra_volumes; i++) {
-            add_nvram_options_for_volume(list, extra_paths[i], offset);
-            offset += 2;
-        }
-    }
-
-    list[offset] = NULL;
-    offset++;	
-
-    for (;;) {
-        chosen_item = get_filtered_menu_selection(headers, list, 0, 0, offset);
-        if (chosen_item == GO_BACK || chosen_item == REFRESH)
-            break;
-        if (chosen_item < action_entries_num) {
-
-            if (chosen_item < 2) {
-                chosen_path = primary_path;
-            } else if (extra_paths != NULL) {
-                chosen_path = extra_paths[(chosen_item / 2) - 1];
-            }
-
-            int chosen_subitem = chosen_item % 2;
-            switch (chosen_subitem) {
-			case 0:
-			    {
-					char backup_path[PATH_MAX];
-					time_t t = time(NULL);
-					struct timeval tp;
-					gettimeofday(&tp, NULL);
-					sprintf(backup_path, "%s/clockworkmod/backup/.nvram/nvram-%ld", chosen_path, tp.tv_sec);
-					nvram_backup(backup_path);
-					break;
-			    }
-            case 1:
-                show_nvram_restore_menu(chosen_path);
-                break;
-            }   
-        } else {
-            goto out;
-        }
-    }
-out:
-    for (i = 0; i < action_entries_num; i++)
-        free(list[i]);
-    return chosen_item;  
 }
 
 //=========================================/
@@ -2052,6 +1977,7 @@ static int default_aromafm(const char* aromafm_path) {
 
 void show_carliv_menu() {
 	char buf[80];
+	char* primary_path = get_primary_storage_path();
     char** extra_paths = get_extra_storage_paths();
     int num_extra_volumes = get_num_extra_volumes();
     int i;
@@ -2060,15 +1986,10 @@ void show_carliv_menu() {
 
     char* carliv_list[] = { "Aroma File Manager",
 							"Rainbow Mode",
-							"About",
-							"Clear Screen",	 	 
+							"About",	 
 							 NULL,
 							 NULL
     };
-    
-    if (volume_for_path("/nvram") != NULL) {
-        carliv_list[4] = "Nvram Backup/Restore";
-    }
 
     for (;;)
     {
@@ -2079,8 +2000,8 @@ void show_carliv_menu() {
         {
 			case 0:
 			    {
-					ensure_path_mounted(get_primary_storage_path());
-				    if (default_aromafm(get_primary_storage_path())) {
+					ensure_path_mounted(primary_path);
+				    if (default_aromafm(primary_path)) {
 	                    break;
 	                }	                
 				    if (extra_paths != NULL) {
@@ -2099,18 +2020,14 @@ void show_carliv_menu() {
 				show_rainbow_menu();
 				break;  
 			case 2:
-				ui_print("CWM Base version: 6.0.5.1\n");
-				ui_print("This is a CWM Recovery reworked and modified by carliv from xda with Clockworkmod version 6 kitkat base.\n");
-				ui_print("For Aroma File Manager is recommended version 1.80 - Calung, from amarullz xda thread, because it has a full touch support in most of devices.\n");
-				ui_print("Thank you all!\n");
+				ui_print("\nCWM Base version: 6.0.5.1\n");
+				ui_print("\nThis is a CWM Recovery reworked and modified by carliv from xda with Clockworkmod version 6 kitkat base.\n");
+				if (volume_for_path("/custpack") != NULL)
+					ui_print("\n[*] With Custpack partition support for Alcatel or TCL phones\n");
+				ui_print("\nFor Aroma File Manager is recommended version 1.80 - Calung, from amarullz xda thread, because it has a full touch support in most of devices.\n");
+				ui_print("\nThank you all!\n");
 				ui_print("\n");
 				break;
-			case 3:
-				ui_print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-				break;
-			case 4:
-				show_nvram_menu();
-				break; 
         }
     }
     
@@ -2259,6 +2176,8 @@ static void create_fstab() {
     if (volume_for_path("/emmc") != NULL)
          write_fstab_root("/emmc", file);
     write_fstab_root("/system", file);
+    if (volume_for_path("/custpack") != NULL)
+         write_fstab_root("/custpack", file);
     write_fstab_root("/sdcard", file);
     if (volume_for_path("/sd-ext") != NULL)
          write_fstab_root("/sd-ext", file);
@@ -2307,7 +2226,7 @@ void handle_failure(int ret) {
         return;
     mkdir("/sdcard/clockworkmod", S_IRWXU | S_IRWXG | S_IRWXO);
     __system("cp /tmp/recovery.log /sdcard/clockworkmod/recovery.log");
-    ui_print("/tmp/recovery.log was copied to /sdcard/clockworkmod/recovery.log. Please report the issue to recovery thread where you found it.\n");
+    ui_print("/tmp/recovery.log was copied to your main sdcard as clockworkmod/recovery.log. Please report the issue to recovery thread where you found it.\n");
 }
 
 static int is_path_mounted(const char* path) {
@@ -2345,6 +2264,7 @@ int verify_root_and_recovery() {
     if (ensure_path_mounted("/system") != 0)
         return 0;
 
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     int ret = 0;
     struct stat st;
     // check to see if install-recovery.sh is going to clobber recovery
@@ -2352,49 +2272,30 @@ int verify_root_and_recovery() {
     // so verify that doesn't exist...
     if (0 != lstat("/system/etc/.installed_su_daemon", &st)) {
         // check install-recovery.sh exists and is executable
-        if (0 == lstat("/system/etc/install-recovery.sh", &st)) {
-            if (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) {
-                ui_show_text(1);
-                ret = 1;
-                if (confirm_selection("ROM may flash stock recovery on boot. Fix?", "Yes - Disable recovery flash")) {
-                    __system("chmod -x /system/etc/install-recovery.sh");
-                }
-            }
-        }
-    }
-
+	    if (0 == lstat("/system/recovery-from-boot.p", &st)) {
+	        ui_show_text(1);
+	        ret = 1;
+	        if (confirm_selection("ROM may flash stock recovery. Fix?", "Yes - Disable recovery flash")) {
+	            __system("rm -f /system/recovery-from-boot.p");
+	            __system("chmod -x /system/etc/install-recovery.sh");
+	        }
+	    }
+	}
+    
     int exists = 0;
-    if (0 == lstat("/system/bin/su", &st)) {
+    if (0 == lstat("/system/xbin/su", &st) || 0 == lstat("/system/bin/su", &st)) {
         exists = 1;
-        if (S_ISREG(st.st_mode)) {
-            if ((st.st_mode & (S_ISUID | S_ISGID)) != (S_ISUID | S_ISGID)) {
-                ui_show_text(1);
-                ret = 1;
-                if (confirm_selection("Root access possibly lost. Fix?", "Yes - Fix root (/system/bin/su)")) {
-                    __system("chmod 6755 /system/bin/su");
-                }
-            }
-        }
-    }
-
-    if (0 == lstat("/system/xbin/su", &st)) {
-        exists = 1;
-        if (S_ISREG(st.st_mode)) {
-            if ((st.st_mode & (S_ISUID | S_ISGID)) != (S_ISUID | S_ISGID)) {
-                ui_show_text(1);
-                ret = 1;
-                if (confirm_selection("Root access possibly lost. Fix?", "Yes - Fix root (/system/xbin/su)")) {
-                    __system("chmod 6755 /system/xbin/su");
-                }
-            }
-        }
     }
 
     if (!exists) {
         ui_show_text(1);
         ret = 1;
-        if (confirm_selection("Root access is missing. Root device?", "Yes - Root device (/system/xbin/su)")) {
-            __system("/sbin/install-su.sh");
+        if (confirm_selection("Root access is missing. Root device?", "Yes - Root device.")) {
+			__system("chmod a+x /sbin/install-su.sh");
+			__system("/sbin/install-su.sh");          
+            ui_print("\n\nBasic root is complete, please install a SuperSU.apk or zip for a better solution.\n\n");
+            ui_print("Press any key to reboot...\n");
+            ui_wait_key();
         }
     }
 

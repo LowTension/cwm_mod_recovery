@@ -22,9 +22,7 @@ int bu_main(int argc, char** argv);
 
 int nandroid_backup(const char* backup_path);
 int nandroid_advanced_backup(const char* backup_path, unsigned char flags);
-int nvram_backup(const char* backup_path);
 int nandroid_restore(const char* backup_path, unsigned char flags);
-int nvram_restore(const char* backup_path, unsigned char flags);
 void nandroid_dedupe_gc(const char* blob_dir);
 void nandroid_force_backup_format(const char* fmt);
 unsigned int nandroid_get_default_backup_format();
@@ -42,6 +40,5 @@ unsigned int nandroid_get_default_backup_format();
 #define NANDROID_CACHE  8
 #define NANDROID_SDEXT  16
 #define NANDROID_WIMAX  32
-#define NANDROID_NVRAM  64
 
 #endif

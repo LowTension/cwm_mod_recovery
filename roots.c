@@ -36,6 +36,8 @@
 #include "recovery_ui.h"
 #include "voldclient/voldclient.h"
 
+#include "cutils/properties.h"
+
 static struct fstab *fstab = NULL;
 
 extern struct selabel_handle *sehandle;
@@ -152,8 +154,30 @@ char** get_extra_storage_paths() {
 static char* android_secure_path = NULL;
 char* get_android_secure_path() {
     if (android_secure_path == NULL) {
-        android_secure_path = malloc(sizeof("/.android_secure") + strlen(get_primary_storage_path()) + 1);
-        sprintf(android_secure_path, "%s/.android_secure", primary_storage_path);
+        char tmp[PATH_MAX];
+        char** extra_paths = get_extra_storage_paths();
+        int num_extra_volumes = get_num_extra_volumes();
+        int i;
+        struct stat st;
+        for (i = 0; i < num_extra_volumes; i++) {
+            sprintf(tmp, "%s/.android_secure", extra_paths[i]);
+            const MountedVolume* mv =
+                find_mounted_volume_by_mount_point(extra_paths[i]);
+            if (ensure_path_mounted(extra_paths[i]) == 0) {
+                if (0 == lstat(tmp, &st)) {
+                    android_secure_path = malloc(strlen(tmp)+1);
+                    sprintf(android_secure_path, "%s/.android_secure", extra_paths[i]);
+                    break;
+                }
+                else if(!mv) { // volume is already mounted
+                    ensure_path_unmounted(extra_paths[i]);
+                }
+            }
+        }
+        if (android_secure_path == NULL) {
+            android_secure_path = malloc(sizeof("/.android_secure") + strlen(get_primary_storage_path()) + 1);
+            sprintf(android_secure_path, "%s/.android_secure", primary_storage_path);
+        }
     }
     return android_secure_path;
 }
@@ -193,6 +217,22 @@ int is_data_media() {
     return !has_sdcard;
 }
 
+static int is_migrated_storage = -1;
+
+static int use_migrated_storage() {
+        if (ensure_path_mounted("/data") != 0)
+            return 0;
+
+        struct stat s;
+        if (0 == lstat("/data/media/0", &s)) {
+	        is_migrated_storage = 1;
+	    } else {
+			is_migrated_storage = 0;
+		}
+
+    return is_migrated_storage;
+}
+
 void setup_data_media() {
     int i;
     char* mount_point = "/sdcard";
@@ -207,7 +247,17 @@ void setup_data_media() {
     // recreate /data/media with proper permissions
     rmdir(mount_point);
     mkdir("/data/media", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-    symlink("/data/media", mount_point);
+
+    // support /data/media/0 (Android 4.2+)
+    char* path = "/data/media";
+    if (use_migrated_storage()) {
+        path = "/data/media/0";
+        mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    }
+    symlink(path, mount_point);
+
+    if (ui_should_log_stdout())
+        LOGI("using %s for %s\n", path, mount_point);
 }
 
 int is_data_media_volume_path(const char* path) {
@@ -234,7 +284,9 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
 
     if (is_data_media_volume_path(path)) {
         if (ui_should_log_stdout()) {
-            LOGI("using /data/media for %s.\n", path);
+            if (use_migrated_storage())
+			    LOGI("using /data/media/0 for %s.\n", path);
+		    else LOGI("using /data/media for %s.\n", path);
         }
         int ret;
         if (0 != (ret = ensure_path_mounted("/data")))
@@ -244,6 +296,9 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
     }
     Volume* v = volume_for_path(path);
     if (v == NULL) {
+        struct stat st;
+        if (0 == stat(path, &st) && S_ISREG(st.st_mode))
+            return 0;
         LOGE("unknown volume for path [%s]\n", path);
         return -1;
     }

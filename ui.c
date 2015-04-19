@@ -36,6 +36,8 @@
 #include "recovery_ui.h"
 #include "voldclient/voldclient.h"
 
+#include "input/touch.h"
+
 extern int __system(const char *command);
 extern int volumes_changed();
 
@@ -130,7 +132,6 @@ static int show_text = 0;
 static int show_text_ever = 0; // i.e. has show_text ever been 1?
 
 static char menu[MENU_MAX_ROWS][MENU_MAX_COLS];
-static int menuTextColor[4] = {MENU_TEXT_COLOR};
 static int show_menu = 0;
 static int menu_top = 0;
 static int menu_items = 0;
@@ -153,10 +154,6 @@ static volatile char key_pressed[KEY_MAX + 1];
 static void update_screen_locked(void);
 static int ui_wait_key_with_repeat();
 static void ui_rainbow_mode();
-
-#ifdef BOARD_TOUCH_RECOVERY
-#include "../../vendor/koush/recovery/touch.c"
-#endif
 
 // Current time
 static double now() {
@@ -264,18 +261,191 @@ static void draw_progress_locked() {
     gettimeofday(&lastprogupd, NULL);
 }
 
-static void draw_text_line(int row, const char* t) {
-  if (t[0] != '\0') {
-    if (ui_get_rainbow_mode()) ui_rainbow_mode();
-    gr_text(0, (row+1)*CHAR_HEIGHT-1, t, 0);
-  }
+static int get_batt_stats(void) {
+    int level = -1;
+    char value[4];
+    FILE * fd;
+#ifndef CUSTOM_BATTERY_FILE
+#define CUSTOM_BATTERY_FILE "/sys/class/power_supply/battery/capacity"
+#endif    
+    if ((fd = fopen(CUSTOM_BATTERY_FILE, "rt")) == NULL){
+		LOGI("Error! opening batt file");
+		level = -1;
+		return level;
+	}
+    fgets(value, 4, fd);
+    fclose(fd);
+    level = atoi(value);
+
+    if (level > 100)
+        level = 100;
+    if (level < 0)
+        level = 0;
+    return level;
 }
 
-void ui_setMenuTextColor(int r, int g, int b, int a) {
-    menuTextColor[0] = r;
-    menuTextColor[1] = g;
-    menuTextColor[2] = b;
-    menuTextColor[3] = a;
+static int get_batt_charging(void) {
+    int charging = 0;
+    char stat[16] = "";
+    FILE * fs;
+#ifndef CUSTOM_BATTERY_STATS_PATH
+#define CUSTOM_BATTERY_STATS_PATH "/sys/class/power_supply/battery/status"
+#endif
+	if ((fs = fopen(CUSTOM_BATTERY_STATS_PATH, "rt")) == NULL){
+		LOGI("Error! opening batt status file");
+		return charging;
+	}
+	fscanf(fs,"%s",stat);
+	if (strncmp(stat,"Charging", 3) == 0) {
+		charging = 1;
+	}
+    fclose(fs);
+    return charging;
+}
+
+#define LEFT_ALIGN   0
+#define CENTER_ALIGN 1
+#define RIGHT_ALIGN  2
+
+void draw_text_line(int row, const char* t, int height, int align) {
+    int col = 0;
+    if (t[0] != '\0') {
+        int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
+        switch(align) {
+            case LEFT_ALIGN:
+                col = 1;
+                break;
+            case CENTER_ALIGN:
+                col = ((gr_fb_width() - length) / 2);
+                break;
+            case RIGHT_ALIGN:
+                col = gr_fb_width() - length - 1;
+                break;
+        }
+
+        if (ui_get_rainbow_mode()) ui_rainbow_mode();
+        gr_text(col, ((row + 1) * height) - ((height - CHAR_HEIGHT) / 2) - 1, t, 0);
+    }
+}
+
+#define MENU_TEXT_COLOR         0, 191, 255, 255
+#define NORMAL_TEXT_COLOR       200, 200, 200, 255
+#define HEADER_TEXT_COLOR       0, 247, 255, 255
+#define MENU_BACKGROUND_COLOR   0, 0, 0, 160
+#define MENU_HIGHLIGHT_COLOR    0, 191, 255, 255
+#define MENU_SEPARATOR_COLOR    0, 247, 255, 200
+
+#define MENU_CHAR_HEIGHT        ((CHAR_HEIGHT) - ((CHAR_HEIGHT) % 4))
+#define MENU_TOTAL_HEIGHT       ((CHAR_HEIGHT) + ((MENU_CHAR_HEIGHT) * 1.3))
+
+static void draw_battery() {
+	int batt_level = 0;
+	int batt_stats = 0;
+	char batt_text[40] = "";	
+    batt_stats = get_batt_charging();
+    batt_level = get_batt_stats();
+    if (batt_stats == 1) {
+		sprintf(batt_text, "[+%d%%]", batt_level);
+	} else {
+		sprintf(batt_text, "[%d%%]", batt_level);
+	}
+	if (batt_level < 21)
+        gr_color(251, 17, 17, 255);
+    else gr_color(40, 176, 40, 255);
+	draw_text_line(0, batt_text, MENU_TOTAL_HEIGHT, RIGHT_ALIGN);
+}
+
+static int get_max_menu_rows(int max_menu_rows)
+{
+	text_rows = gr_fb_height() / CHAR_HEIGHT;
+	max_menu_rows = ((text_rows - MIN_LOG_ROWS) * CHAR_HEIGHT) / MENU_TOTAL_HEIGHT;
+   
+    return max_menu_rows;
+}
+
+void draw_menu() {
+    if (show_text) {
+        // don't "disable" the background any more with this...
+        gr_color(0, 0, 0, 120);
+        gr_fill(0, 0, gr_fb_width(), gr_fb_height());
+
+        int i = 0;
+        int j = 0;
+        int row = 0;            // current row that we are drawing on
+        
+        draw_battery();
+        
+        if (show_menu) {			
+            if (menu_sel >= menu_show_start && menu_sel < menu_show_start + max_menu_rows - menu_top) {
+                gr_color(MENU_HIGHLIGHT_COLOR);
+                gr_fill(0, ((menu_top + menu_sel - menu_show_start) * MENU_TOTAL_HEIGHT) + 1, gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1) * MENU_TOTAL_HEIGHT);
+				gr_color(255, 255, 255, 255);
+				gr_fill(0, (menu_top + menu_sel - menu_show_start) * MENU_TOTAL_HEIGHT, gr_fb_width(), ((menu_top + menu_sel - menu_show_start) * MENU_TOTAL_HEIGHT) + 1);
+            }
+
+            // start header text write
+            gr_color(HEADER_TEXT_COLOR);
+            for(i = 0; i < menu_top; ++i) {
+                draw_text_line(i, menu[i], MENU_TOTAL_HEIGHT, LEFT_ALIGN);
+                row++;
+            }
+
+            if (menu_items - menu_show_start + menu_top >= max_menu_rows)
+                j = max_menu_rows - menu_top;
+            else
+                j = menu_items - menu_show_start;
+
+            for(i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
+                if (i == menu_top + menu_sel && menu_sel >= menu_show_start && menu_sel < menu_show_start + max_menu_rows - menu_top) {
+                    gr_color(255, 255, 255, 255); 
+                    draw_text_line(i - menu_show_start , menu[i], MENU_TOTAL_HEIGHT, LEFT_ALIGN);
+                } else {
+                    gr_color(MENU_BACKGROUND_COLOR);
+                    gr_fill(0, ((i - menu_show_start) * MENU_TOTAL_HEIGHT) + 1,
+                            gr_fb_width(), (i - menu_show_start + 1) * MENU_TOTAL_HEIGHT);
+					gr_color(MENU_SEPARATOR_COLOR);
+					gr_fill(0, ((i - menu_show_start) * MENU_TOTAL_HEIGHT),
+							gr_fb_width(), ((i - menu_show_start) * MENU_TOTAL_HEIGHT) + 1);
+                    gr_color(MENU_TEXT_COLOR);
+                    draw_text_line(i - menu_show_start, menu[i], MENU_TOTAL_HEIGHT, LEFT_ALIGN);
+                }
+                row++;
+                if (row >= max_menu_rows)
+                    break;
+            }
+
+            gr_color(MENU_SEPARATOR_COLOR);
+            gr_fill(0, (row * MENU_TOTAL_HEIGHT) + (MENU_TOTAL_HEIGHT / 2) - 1,
+                    gr_fb_width(), (row * MENU_TOTAL_HEIGHT) + (MENU_TOTAL_HEIGHT / 2) + 1);
+            row++;
+        }
+
+        int available_rows;
+        int cur_row;
+        int start_row;
+        cur_row = text_row;
+        start_row = ((row * MENU_TOTAL_HEIGHT) / CHAR_HEIGHT);
+		available_rows = (gr_fb_height() - (row * MENU_TOTAL_HEIGHT)) / CHAR_HEIGHT;
+
+        if (available_rows < MAX_ROWS)
+            cur_row = (cur_row + (MAX_ROWS - available_rows)) % MAX_ROWS;
+        else
+            start_row = (available_rows + ((row * MENU_TOTAL_HEIGHT) / CHAR_HEIGHT)) - MAX_ROWS;
+
+        int r;
+        for(r = 0; r < (available_rows < MAX_ROWS ? available_rows : MAX_ROWS); r++) {
+            if ((start_row + r) <= 1) {
+                int col_offset = 1;
+                if (text_cols - col_offset < 0) col_offset = 0; 
+                text[(cur_row + r) % MAX_ROWS][text_cols - col_offset] = '\0';
+            }
+
+          gr_color(NORMAL_TEXT_COLOR);
+          draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], CHAR_HEIGHT, LEFT_ALIGN);
+        }
+    }
+
+//    draw_virtualkeys_locked();
 }
 
 // Redraw everything on the screen.  Does not flip pages.
@@ -287,67 +457,7 @@ static void draw_screen_locked(void) {
     draw_background_locked(gCurrentIcon);
     draw_progress_locked();
 
-    if (show_text) {
-		gr_color(0, 0, 0, 120);
-        gr_fill(0, 0, gr_fb_width(), gr_fb_height());
-        
-        int total_rows = gr_fb_height() / CHAR_HEIGHT;
-        int i = 0;
-        int j = 0;
-        int row = 0; // current row that we are drawing on
-        if (show_menu) {
-#ifndef BOARD_TOUCH_RECOVERY
-            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
-            gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
-                    gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
-
-            gr_color(HEADER_TEXT_COLOR);
-            for (i = 0; i < menu_top; ++i) {
-                draw_text_line(i, menu[i]);
-                row++;
-            }
-
-            if (menu_items - menu_show_start + menu_top >= max_menu_rows)
-                j = max_menu_rows - menu_top;
-            else
-                j = menu_items - menu_show_start;
-
-            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
-            for (i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
-                if (i == menu_top + menu_sel) {
-                    gr_color(255, 255, 255, 255);
-                    draw_text_line(i - menu_show_start , menu[i]);
-                    gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
-                } else {
-                    gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
-                    draw_text_line(i - menu_show_start, menu[i]);
-                }
-                row++;
-                if (row >= max_menu_rows)
-                    break;
-            }
-
-            gr_fill(0, row*CHAR_HEIGHT+CHAR_HEIGHT/2-1,
-                    gr_fb_width(), row*CHAR_HEIGHT+CHAR_HEIGHT/2+1);
-#else
-            row = draw_touch_menu(menu, menu_items, menu_top, menu_sel, menu_show_start);
-#endif
-        }
-
-        gr_color(NORMAL_TEXT_COLOR);
-        int cur_row = text_row;
-        int available_rows = total_rows - row - 1;
-        int start_row = row + 1;
-        if (available_rows < MAX_ROWS)
-            cur_row = (cur_row + (MAX_ROWS - available_rows)) % MAX_ROWS;
-        else
-            start_row = total_rows - MAX_ROWS;
-
-        int r;
-        for (r = 0; r < (available_rows < MAX_ROWS ? available_rows : MAX_ROWS); r++) {
-            draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS]);
-        }
-    }
+    draw_menu();
 }
 
 // Redraw everything on the screen and flip the screen (make it visible).
@@ -437,10 +547,7 @@ static int input_callback(int fd, short revents, void *data) {
     if (ret)
         return -1;
 
-#ifdef BOARD_TOUCH_RECOVERY
-    if (touch_handle_input(fd, ev))
-        return 0;
-#endif
+    touch_handle_input(fd, &ev);
 
     if (ev.type == EV_SYN) {
         return 0;
@@ -526,9 +633,9 @@ void ui_init(void) {
     text_col = text_row = 0;
     text_rows = gr_fb_height() / CHAR_HEIGHT;
     max_menu_rows = text_rows - MIN_LOG_ROWS;
-#ifdef BOARD_TOUCH_RECOVERY
+
     max_menu_rows = get_max_menu_rows(max_menu_rows);
-#endif
+
     if (max_menu_rows > MENU_MAX_ROWS)
         max_menu_rows = MENU_MAX_ROWS;
     if (text_rows > MAX_ROWS) text_rows = MAX_ROWS;
@@ -708,6 +815,9 @@ void ui_print(const char *fmt, ...) {
 
     if (ui_log_stdout)
         fputs(buf, stdout);
+
+    if (!ui_has_initialized)
+        return;
 
     // This can get called before ui_init(), so be careful.
     pthread_mutex_lock(&gUpdateMutex);

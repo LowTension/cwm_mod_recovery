@@ -1,22 +1,69 @@
 LOCAL_PATH := $(call my-dir)
 
-include $(CLEAR_VARS)
-
-
-LOCAL_MODULE := su.recovery
-LOCAL_MODULE_TAGS := eng debug
-LOCAL_FORCE_STATIC_EXECUTABLE := true
-LOCAL_STATIC_LIBRARIES := libc liblog libcutils
-LOCAL_C_INCLUDES := external/sqlite/dist
-LOCAL_SRC_FILES := ../../../external/koush/Superuser/Superuser/jni/su/su.c ../../../external/koush/Superuser/Superuser/jni/su/daemon.c ../../../external/koush/Superuser/Superuser/jni/su/activity.c ../../../external/koush/Superuser/Superuser/jni/su/utils.c ../../../external/koush/Superuser/Superuser/jni/su/pts.c dbstub.c
-LOCAL_CFLAGS := -DSQLITE_OMIT_LOAD_EXTENSION -DREQUESTOR=\"$(SUPERUSER_PACKAGE)\"
-ifdef SUPERUSER_PACKAGE_PREFIX
-  LOCAL_CFLAGS += -DREQUESTOR_PREFIX=\"$(SUPERUSER_PACKAGE_PREFIX)\"
+ifeq ($(TARGET_ARCH), arm)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := arm/su
+	include $(BUILD_PREBUILT)
 endif
-LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
-LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
-include $(BUILD_EXECUTABLE)
+ifeq ($(TARGET_ARCH), arm64)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := arm64/su
+	include $(BUILD_PREBUILT)
+endif
 
+ifeq ($(TARGET_ARCH), mips)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := mips/su
+	include $(BUILD_PREBUILT)
+endif
+ifeq ($(TARGET_ARCH), mips64)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := mips64/su
+	include $(BUILD_PREBUILT)
+endif
+
+ifeq ($(TARGET_ARCH), x86)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := x86/su
+	include $(BUILD_PREBUILT)
+endif
+ifeq ($(TARGET_ARCH), x64)
+	#su binary
+	include $(CLEAR_VARS)
+	LOCAL_MODULE := su.recovery
+	LOCAL_MODULE_TAGS := optional
+	LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+	LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+	LOCAL_SRC_FILES := x64/su
+	include $(BUILD_PREBUILT)
+endif
+
+#install-su.sh
 include $(CLEAR_VARS)
 LOCAL_MODULE := install-su.sh
 LOCAL_MODULE_TAGS := optional
@@ -25,10 +72,20 @@ LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
 LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
 
+#install-recovery.sh
 include $(CLEAR_VARS)
-LOCAL_MODULE := run-su-daemon.sh
+LOCAL_MODULE := install-recovery.sh
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
-LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
-LOCAL_SRC_FILES := ../../../external/koush/Superuser/Superuser/assets/install-recovery.sh
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/etc
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
+include $(BUILD_PREBUILT)
+
+#99SuperSUDaemon
+include $(CLEAR_VARS)
+LOCAL_MODULE := 99SuperSUDaemon
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/etc
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
 include $(BUILD_PREBUILT)
