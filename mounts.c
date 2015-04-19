@@ -22,6 +22,7 @@
 #include <sys/mount.h>
 
 #ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/limits.h>
@@ -31,6 +32,7 @@
 #include <libgen.h>
 #include "common.h"
 #include "roots.h"
+#endif
 #endif
 
 #include "mounts.h"
@@ -250,6 +252,7 @@ find_mounted_volume_by_real_node(const char *node)
     return NULL;
 }
 
+#ifdef BOARD_HAS_MTK
 //=========================================/
 //=   dynamic get size of MTK partitions  =/
 //=    original work of Dees_Troy - TWRP  =/
@@ -257,7 +260,7 @@ find_mounted_volume_by_real_node(const char *node)
 //=    from PhilZ (PhilZ Touch Recovery)  =/
 //=========================================/
 
-#ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
 
 unsigned long long mtk_size = 0;
 
@@ -316,4 +319,5 @@ int mtk_p_size(const char* path) {
         LOGE("Failed to find partition size '%s'\n", path);
     return ret;
 }
+#endif
 #endif

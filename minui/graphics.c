@@ -34,7 +34,7 @@
 #ifdef BOARD_USE_CUSTOM_RECOVERY_FONT
 #include BOARD_USE_CUSTOM_RECOVERY_FONT
 #else
-#include "font_10x18.h"
+#include "font20_12x24.h"
 #endif
 
 #include "minui.h"
@@ -293,21 +293,6 @@ void gr_flip(void)
         /* swap front and back buffers */
         if (double_buffering)
             gr_active_fb = (gr_active_fb + 1) & 1;
-
-#ifdef BOARD_HAS_FLIPPED_SCREEN
-    /* flip buffer 180 degrees for devices with physicaly inverted screens */
-    unsigned int i;
-    unsigned int j;
-    uint8_t tmp;
-    for (i = 0; i < ((vi.xres_virtual * vi.yres)/2); i++) {
-	for (j = 0; j < PIXEL_SIZE; j++) {
-		tmp = gr_mem_surface.data[i * PIXEL_SIZE + j];
-		gr_mem_surface.data[i * PIXEL_SIZE + j] = gr_mem_surface.data[(vi.xres_virtual * vi.yres * PIXEL_SIZE) - ((i+1) * PIXEL_SIZE) + j];
-		gr_mem_surface.data[(vi.xres_virtual * vi.yres * PIXEL_SIZE) - ((i+1) * PIXEL_SIZE) + j] = tmp;
-	}
-    }
-#endif
-
 
     /* copy data from the in-memory surface to the buffer we're about
      * to make active. */

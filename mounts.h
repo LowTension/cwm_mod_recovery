@@ -39,8 +39,10 @@ const MountedVolume *
 find_mounted_volume_by_real_node(const char *node);
 
 #ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
 unsigned long long mtk_size;
 int mtk_p_size(const char* path);
+#endif
 #endif
 
 #endif  // MTDUTILS_MOUNTS_H_

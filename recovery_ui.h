@@ -119,6 +119,10 @@ extern int device_wipe_cache();
 
 extern int device_wipe_dalvik_cache();
 
+extern int device_wipe_battery_stats();
+
+extern int device_wipe_system();
+
 // Loosely track the depth of the current menu
 extern int ui_root_menu;
 
@@ -129,5 +133,8 @@ void set_sdcard_update_bootloader_message();
 extern int ui_handle_key(int key, int visible);
 
 void reboot_main_system(int cmd, int flags, char *arg);
+
+void draw_menu();
+void draw_text_line(int row, const char* t, int height, int align);
 
 #endif

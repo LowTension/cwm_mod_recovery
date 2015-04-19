@@ -377,7 +377,7 @@ copy_sideloaded_package(const char* original_path) {
   strcpy(copy_path, SIDELOAD_TEMP_DIR);
   strcat(copy_path, "/package.zip");
 
-  char* buffer = malloc(BUFSIZ);
+  char* buffer = (char*)malloc(BUFSIZ);
   if (buffer == NULL) {
     LOGE("Failed to allocate buffer\n");
     return NULL;
@@ -426,9 +426,7 @@ copy_sideloaded_package(const char* original_path) {
 
 static const char**
 prepend_title(const char** headers) {
-    const char* title[] = { EXPAND(RECOVERY_VERSION),
-                      "",
-                      NULL };
+    const char* title[] = { EXPAND(RECOVERY_VERSION), "", NULL };
 
     // count the number of lines in our title, plus the
     // caller-provided headers.
@@ -543,10 +541,10 @@ update_directory(const char* path, const char* unmount_when_done) {
 
     int d_size = 0;
     int d_alloc = 10;
-    char** dirs = malloc(d_alloc * sizeof(char*));
+    char** dirs = (char**)malloc(d_alloc * sizeof(char*));
     int z_size = 1;
     int z_alloc = 10;
-    char** zips = malloc(z_alloc * sizeof(char*));
+    char** zips = (char**)malloc(z_alloc * sizeof(char*));
     zips[0] = strdup("../");
 
     while ((de = readdir(d)) != NULL) {
@@ -560,9 +558,9 @@ update_directory(const char* path, const char* unmount_when_done) {
 
             if (d_size >= d_alloc) {
                 d_alloc *= 2;
-                dirs = realloc(dirs, d_alloc * sizeof(char*));
+                dirs = (char**)realloc(dirs, d_alloc * sizeof(char*));
             }
-            dirs[d_size] = malloc(name_len + 2);
+            dirs[d_size] = (char*)malloc(name_len + 2);
             strcpy(dirs[d_size], de->d_name);
             dirs[d_size][name_len] = '/';
             dirs[d_size][name_len+1] = '\0';
@@ -572,7 +570,7 @@ update_directory(const char* path, const char* unmount_when_done) {
                    strncasecmp(de->d_name + (name_len-4), ".zip", 4) == 0) {
             if (z_size >= z_alloc) {
                 z_alloc *= 2;
-                zips = realloc(zips, z_alloc * sizeof(char*));
+                zips = (char**)realloc(zips, z_alloc * sizeof(char*));
             }
             zips[z_size++] = strdup(de->d_name);
         }
@@ -585,7 +583,7 @@ update_directory(const char* path, const char* unmount_when_done) {
     // append dirs to the zips list
     if (d_size + z_size + 1 > z_alloc) {
         z_alloc = d_size + z_size + 1;
-        zips = realloc(zips, z_alloc * sizeof(char*));
+        zips = (char**)realloc(zips, z_alloc * sizeof(char*));
     }
     memcpy(zips + z_size, dirs, d_size * sizeof(char*));
     free(dirs);
@@ -596,6 +594,8 @@ update_directory(const char* path, const char* unmount_when_done) {
     int chosen_item = 0;
     do {
         chosen_item = get_menu_selection(headers, zips, 1, chosen_item);
+        if (chosen_item < 0) // GO_BACK / REFRESH
+            chosen_item = 0;
 
         char* item = zips[chosen_item];
         int item_len = strlen(item);
@@ -735,7 +735,7 @@ erase_volume(const char *volume) {
         copy_logs();
     }
 
-    ui_set_background(BACKGROUND_ICON_NONE);
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_reset_progress();
     return result;
 }
@@ -745,9 +745,56 @@ erase_volume(const char *volume) {
 //=             of carliv@xda             =/
 //=========================================/
 
+void wipe_preflash(int confirm) {
+	
+	if (confirm && !confirm_selection("Confirm wipe as in preflash?", "Yes - Wipe All!"))
+		return;
+	if (!confirm_selection("It will wipe system too!!!", "Yes - I want it this way."))
+		return;
+
+    ui_print("\n-- Wiping System...\n");
+    device_wipe_system();
+    erase_volume("/system");
+    ui_print("System wipe complete.\n");
+    sleep(1);
+    ui_print("\n-- Wiping data...\n");
+    device_wipe_data();
+    erase_volume("/data");
+    if (has_datadata()) {
+        erase_volume("/datadata");
+    }
+    if (volume_for_path("/sd-ext") != NULL)
+         erase_volume("/sd-ext");
+    erase_volume(get_android_secure_path());
+    ui_print("Data wipe complete.\n");
+    sleep(1);
+    ui_print("\n-- Wiping cache...\n");
+    device_wipe_cache();
+    erase_volume("/cache");
+    ui_print("Cache wipe complete.\n");
+    sleep(1);
+	ensure_path_mounted("/data");
+	if (volume_for_path("/sd-ext") != NULL)
+	ensure_path_mounted("/sd-ext");
+	ensure_path_mounted("/cache");
+	device_wipe_dalvik_cache();
+	ui_print("\n-- Wiping dalvik-cache...\n");
+	__system("rm -rf /data/dalvik-cache");
+	__system("rm -rf /cache/dalvik-cache");
+	__system("rm -rf /sd-ext/dalvik-cache");
+	ui_print("Dalvik Cache wiped.\n");	
+	ensure_path_unmounted("/data");
+	if (volume_for_path("/sd-ext") != NULL)
+	ensure_path_unmounted("/sd-ext"); 
+	ui_print("\nPreflash wipe complete. Don't reboot to Android just now [*Reboot phone* --first option in menu], because there is no system files in it. Either flash a new ROM or restore a backup to avoid troubles!!!.\n");
+	sleep(1);   
+}
+
 void wipe_data(int confirm) {
 	
 	if (confirm && !confirm_selection("Confirm wipe all user data?", "Yes - Wipe All Data"))
+		return;
+	if (!confirm_selection("Are you sure?", "Yes"))
 		return;
 
     ui_print("\n-- Wiping data...\n");
@@ -760,17 +807,6 @@ void wipe_data(int confirm) {
     if (volume_for_path("/sd-ext") != NULL)
          erase_volume("/sd-ext");
     erase_volume(get_android_secure_path());
-    char buf[80];
-    char** extra_paths = get_extra_storage_paths();
-    int num_extra_volumes = get_num_extra_volumes();
-    int i;
-    if (extra_paths != NULL) {
-        for (i = 0; i < get_num_extra_volumes(); i++) {
-			ensure_path_mounted(extra_paths[i]);
-            sprintf(buf, "%s/.android_secure", extra_paths[i]);
-            erase_volume(buf);
-        }
-    }
     ui_print("Data wipe complete.\n");
 }
 
@@ -790,9 +826,11 @@ void wipe_dalvik_cache(int confirm) {
 		ensure_path_mounted("/sd-ext");
 	ensure_path_mounted("/cache");
 	if (confirm_selection("Confirm wipe?", "Yes - Wipe Dalvik Cache")) {
-		__system("rm -r /data/dalvik-cache");
-		__system("rm -r /cache/dalvik-cache");
-		__system("rm -r /sd-ext/dalvik-cache");
+		device_wipe_dalvik_cache();
+		ui_print("\n-- Wiping dalvik-cache...\n");
+		__system("rm -rf /data/dalvik-cache");
+		__system("rm -rf /cache/dalvik-cache");
+		__system("rm -rf /sd-ext/dalvik-cache");
 		ui_print("Dalvik Cache wiped.\n");
 	}
 	else 
@@ -1035,7 +1073,7 @@ main(int argc, char **argv) {
 
     device_ui_init(&ui_parameters);
     ui_init();
-    ui_print(EXPAND(RECOVERY_VERSION)"\n");
+    ui_print(EXPAND(RECOVERY_VERSION)"_Kitkat["EXPAND(RECOVERY_BUILD_ID)"]\n");
     ui_print("Compiled by "EXPAND(RECOVERY_BUILD_USER)"@"EXPAND(RECOVERY_BUILD_HOST)" on: "EXPAND(RECOVERY_BUILD_DATE)"\n");
     load_volume_table();
     process_volumes();
@@ -1105,7 +1143,7 @@ main(int argc, char **argv) {
         // "/cache/foo".
         if (strncmp(update_package, "CACHE:", 6) == 0) {
             int len = strlen(update_package) + 10;
-            char* modified_path = malloc(len);
+            char* modified_path = (char*)malloc(len);
             strlcpy(modified_path, "/cache/", len);
             strlcat(modified_path, update_package+6, len);
             printf("(replacing path \"%s\" with \"%s\")\n",
@@ -1210,4 +1248,6 @@ main(int argc, char **argv) {
 
 void set_perf_mode(int on) {
     property_set("recovery.perf.mode", on ? "1" : "0");
+	if (on)
+        usleep(900000);
 }

@@ -42,7 +42,9 @@
 #include "mmcutils.h"
 
 #ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
 #include "../mounts.h"
+#endif
 #endif
 
 unsigned ext3_count = 0;
@@ -506,8 +508,10 @@ mmc_raw_dump_internal (const char* in_file, const char *out_file, unsigned sz) {
         {
             fputc ( ch, out );
 #ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
             if (++counter == sz)
                 break;
+#endif
 #endif
         }
     }
@@ -625,6 +629,7 @@ int cmd_mmc_backup_raw_partition(const char *partition, const char *filename)
     {
         unsigned sz = 0;
 
+#ifdef BOARD_HAS_MTK
 //=========================================/
 //=   dynamic get size of MTK partitions  =/
 //=    original work of PhilZ for PhilZ   =/
@@ -632,7 +637,7 @@ int cmd_mmc_backup_raw_partition(const char *partition, const char *filename)
 //=     ported and adapted by carliv@xda  =/
 //=========================================/
 
-#ifdef BOARD_HAS_MTK
+#ifdef BOARD_NEEDS_MTK_GETSIZE
         if (strstr(partition, "/boot") != NULL) {
             if (mtk_p_size("/boot") != 0)
                 return -1;
@@ -660,6 +665,14 @@ int cmd_mmc_backup_raw_partition(const char *partition, const char *filename)
             sz = (unsigned)mtk_size;
             printf("Nvram: %s (%u)\n", partition, sz);
         }
+        
+        if (strstr(partition, "/logo") != NULL) {
+            if (mtk_p_size("/logo") != 0)
+                return -1;
+            sz = (unsigned)mtk_size;
+            printf("Nvram: %s (%u)\n", partition, sz);
+        }
+#endif
 #endif
        
         return mmc_raw_dump_internal(partition, filename, sz);
