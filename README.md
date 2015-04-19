@@ -11,6 +11,7 @@ Some of the features:
 - *Advanced backup/restore menu*;
 - Rainbow UI enabler menu;
 - customized GUI;
+- the Root solution provided by [Chainfire](http://forum.xda-developers.com/showthread.php?t=1538053) for free on [his page](http://download.chainfire.eu/696/SuperSU/UPDATE-SuperSU-v2.46.zip);
 - and some other;
 - some of the features are inspired from [ProjectOpenCannibal Recovery](https://github.com/ProjectOpenCannibal/android_bootable_recovery);
 
