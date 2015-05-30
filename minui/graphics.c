@@ -34,7 +34,7 @@
 #ifdef BOARD_USE_CUSTOM_RECOVERY_FONT
 #include BOARD_USE_CUSTOM_RECOVERY_FONT
 #else
-#include "font20_12x24.h"
+#include "roboto_15x24.h"
 #endif
 
 #include "minui.h"
